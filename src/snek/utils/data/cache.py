@@ -15,6 +15,7 @@ from dotmap import DotMap
 from ..term.printkit import lc, glyph, silly, trace, error, info, warn
 from ..helpers import reduce_dict
 from ..base.singleton import Singleton
+#from .store import StoreProvider
 #-----------------------------><-----------------------------#
 
 
@@ -76,7 +77,7 @@ class Cache():
     def noop(self):
       pass
     
-    def ls_cmds(self):
+    def _cmds(self):
       
       fxs = [name for name in dir(self) if callable(getattr(self, name)) and not name.startswith("__")]
       print("cache commands:")
@@ -248,7 +249,7 @@ class Cache():
         "set": self.set_prop,
         "push": self.push_prop,
         "pop": self.pop_prop,
-        "ls_cmds": self.invoke,
+        "_cmds": self.invoke,
         "tick" : {
           "invoke": "noop",  
         },
@@ -286,7 +287,7 @@ class Cache():
 
     def _next_task(self, task):
 
-      silly(f'attempting next task {task.get("cmd")}')
+      #trace(f'attempting next task {task.get("cmd")}')
       
       if not task or 'cmd' not in task:
         raise ValueError('Invalid task format.')
@@ -299,7 +300,7 @@ class Cache():
       kwargs['ssid'] = ssid #want it at the end
       kwargs['cmd'] = cmd
 
-      trace(f"Executing task {task.get('task_id')} [{cmd}] [{ssid}]")
+      #trace(f"Executing task {task.get('task_id')} [{cmd}] [{ssid}]")
 
       self._execute(cmd, **kwargs)
 
@@ -318,7 +319,7 @@ class Cache():
         except AttributeError as e: 
           error(f"Invalid attr key: {e} {e.__traceback__}")
         except Exception as e:
-          error(f"Error executing task {task.task_id}: {e} {e.__traceback__.tb_lineno}")
+          error(f"Error executing task {task}: {e} {e.__traceback__.tb_lineno}")
 
       return self
 
@@ -328,14 +329,11 @@ class Cache():
 
     def parse_command(self, line):
 
-      trace(f'parse command [{line}]')
+      #trace(f'parse command [{line}]')
 
       parts = line.split(maxsplit=2)  # Split only the first two spaces
 
-      #if len(parts) < 2:
-      #  raise ValueError("Invalid command format.")
-      
-      info(parts)
+      #trace(parts)
       cmd = parts[0]
       prop = None
       value = None
@@ -370,7 +368,7 @@ class Cache():
       if 'task_id' not in task:  
         task['task_id'] = gen_id(12)
 
-      silly(f'stack: {task}')
+      #trace(f'stack: {task}')
 
       self.push_task(task)
       return task
@@ -400,8 +398,7 @@ class Cache():
       task_id = kwargs.pop('task_id',None)
       ssid = kwargs.pop('ssid',None)
       
-      info(f'invoking! {cmd}')
-      
+      #info(f'invoking! {cmd}')
       warn(f'proxy function invoke called [{cmd}] [{task_id}] [{ssid}] [{kwargs}]')
       
       fx = getattr(self, cmd, None)
@@ -449,13 +446,15 @@ def gen_id(size=24):
 ##----------------------------------------------##
 ## Static Cache instance
 
-static_cache = Cache()
+#static_cache = Cache()
 
 class StaticCache(Cache, metaclass=Singleton):
     def __init__(self):
         super().__init__()
         
         
+static_cache = StaticCache()
+
 #-----------------------------><-----------------------------#
 # -> Driver: 
 

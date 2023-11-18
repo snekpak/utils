@@ -1,0 +1,14 @@
+{
+  "python.analysis.extraPaths": [
+    "./src"
+  ],  
+  "files.exclude": {
+      "**/__pycache__": true,
+      "**/__init__.py": true,
+      "**/*.egg-info":true,
+      "**/LICENSE":true,
+      "**/pyproject.toml":true,
+      "**/.gitignore":true,
+      "**/.vscode":true
+  }
+}

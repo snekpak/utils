@@ -43,6 +43,11 @@ def escape_x(msg, fg_code, bg_code=0, inverse=False, prefix=''):
   code = escape(fg=fg_code,bg=bg_code,inv=inverse)
   return f"""{code}{prefix}{msg}\033[0m"""
 
+
+def pretty(_,code,prefix=''):
+  print(escape_str(code, _, prefix))  
+
+
 #--------------------------------
 
 def pad_size(text, tdir):

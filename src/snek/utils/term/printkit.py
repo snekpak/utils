@@ -11,7 +11,7 @@
 # -> Standrd Imports: 
 
 #-----------------------------><-----------------------------#
-from .printer_abs import Printer, set_printer_level, set_printer_config, get_printer_level, level_lookup, level, lc, glyph, stderr
+from .printer_abs import Printer, pretty, set_printer_level, set_printer_config, get_printer_level, level_lookup, level, lc, glyph, stderr
 from .logo import logo_bg
 from .view import view_clear
 from ..smart.fbook import FunctionBook

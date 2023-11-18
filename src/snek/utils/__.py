@@ -1,11 +1,11 @@
 
 
-# from .lib.smart.obj import SmartObject, smart_merge
+from .smart.obj import SmartObject, smart_merge
 
-# from .lib.term.printkit import * #print_kit
+from .term.printkit import * #print_kit
 
-# from .lib.term.escape import escape_str, escape_x
+from .term.escape import escape_str, escape_x
 
-# from .lib.data.cache import Cache, driver as cache_driver
+from .data.cache import Cache, static_cache, driver as cache_driver
 
 

@@ -16,7 +16,7 @@ import sys, pprint
 from json import dumps 
 #-----------------------------><-----------------------------#
 
-from .escape import escape_parts, escape_wrap, escape_code, text_pad
+from .escape import escape_parts, escape_wrap, escape_code, text_pad, pretty
 from .const import LEVEL as level, GLYPH as glyph, TDIR as tdir, LC as lc
 from ..smart.enum import enum_lookup
 from ..smart.obj import SmartObject, smart_merge
