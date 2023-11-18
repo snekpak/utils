@@ -1,0 +1,38 @@
+    
+    [build-system]
+    requires = ["setuptools>=68.2.2", "wheel"]
+    build-backend = "setuptools.build_meta"
+        
+    [project]
+    name = "snek_utils"
+    version = "0.4.0"
+    authors = [{name = "qodeninja"}]
+    description = "snek utils package"
+    readme = "README.md"
+    classifiers = [
+        "Programming Language :: Python :: 3.11",
+        "Operating System :: OS Independent",
+    ]
+
+    dependencies = [  ]
+
+    [project.scripts]
+    #keeji_world = "keeji.keeji_app.main:main"
+
+
+    # [tool.setuptools]
+    # where = ["src"]    
+    # include = ["culebra*"] 
+    # packages = ["culebra", "culebra.hello_world"]
+    # packages = find_namespace_packages(include=["culebra.*"])
+
+    [tool.setuptools.packages.find]
+    where = ["src"]  
+    include = ["snek*"] 
+
+
+    [project.urls]
+    Homepage = "https://example.com"
+    Documentation = "https://readthedocs.org"
+    Repository = "https://github.com/me/spam.git"
+    Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
