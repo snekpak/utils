@@ -15,40 +15,55 @@ from dotmap import DotMap
 from ..term.printkit import lc, glyph, silly, trace, error, info, warn
 from ..helpers import reduce_dict
 from ..base.singleton import Singleton
-#from .store import StoreProvider
+from .store import StoreProvider
+
+
+  
 #-----------------------------><-----------------------------#
 
-
+  
 class Cache():
-    def __init__(self, size=24):
+    def __init__(self,**opts):
       self.data = DotMap()
       self.meta = DotMap()
       self.meta.sessions = []
       self.meta.tasks = []
-      self.active = 0
-      self.size = size
+      self._active = 0
       self._last_task = None
+      self._out=[]
+      
+      # self._data = {
+        
+      #   '_meta':{ 
+      #     'sessions':[], 
+      #     'tasks':[],
+      #   },
+      #   '_hive':{    },
+      # }
 
     ##----------------------------------------------##
 
-    def raw_dump(self):
-      return str(self.data)
 
-    def to_data_json(self):
-      return json.dumps(self.data.toDict())
+    # def to_json(self):
+    #   info(f'HIVE {repr(self.data)}')
+      
+    #   print(dict(self.data))
+
+    # def __str__(self):
+    #   return self.to_json()
+    
+    # def dump_json(self):
+    #   print(self.to_json())
+      
+    @property
+    def active(self):
+        return self._active
+
+    @active.setter
+    def active(self, val):
+        self._active = val
 
 
-    def to_json(self):
-      return json.dumps({
-        "data": dict(self.data),  # Convert DotMap to dictionary
-        "meta": dict(self.meta),
-        "active": self.active,
-        "size": self.size,
-        "_last_task": self._last_task
-      })
-
-    def __str__(self):
-      return self.to_json()
 
     @property
     def last_task(self):
@@ -57,6 +72,36 @@ class Cache():
     @last_task.setter
     def last_task(self, val):
         self._last_task = val
+
+
+
+    def out(self,val=None):
+      data = self._out
+      if not val:
+        if len(data) > 0:
+          return data.pop()
+        return []
+      else:
+        data.append(val)
+      
+
+    # @out.setter
+    # def out(self, val):
+    #   #data = self._out
+    #   if len(self._out) == 0: self._out=[]
+    #   self._out.push(val)
+
+
+
+
+    ##----------------------------------------------##
+
+
+    def raw_dump(self):
+      return str(self.data)
+
+    def to_json(self):
+      return json.dumps(self.data.toDict())
 
 
     ##----------------------------------------------##
@@ -78,7 +123,6 @@ class Cache():
       pass
     
     def _cmds(self):
-      
       fxs = [name for name in dir(self) if callable(getattr(self, name)) and not name.startswith("__")]
       print("cache commands:")
       for cmd in fxs:
@@ -117,7 +161,7 @@ class Cache():
 
     ## CREATE SSS
     def create_session(self, init=None):
-      ssid = gen_id(self.size)
+      ssid = gen_id(24)
       data = self.data
       meta = self.meta
       data[ssid] = init or DotMap()
@@ -153,10 +197,13 @@ class Cache():
 
 
     def set_prop(self, prop, val, ssid=None, **kwargs):
+      
+      #info(f'SET PROP {prop}{val}')
       ssid = ssid or self.active
       hive = self._hive(ssid)
       if self.has_session(ssid):
         hive[prop] = val
+        #info(f'HIVE {self.data}')
       else:
         raise ValueError(f"No session with ID {ssid} found.")
       
@@ -170,7 +217,9 @@ class Cache():
       hive = self._hive(ssid)
 
       if self.has_session(ssid):
-        return hive.get(prop, None)
+        data = hive.get(prop, None)
+        #self.out(data)
+        return data
       #implicit else
       raise ValueError(f"No session with ID {ssid} found.")
     
@@ -247,12 +296,14 @@ class Cache():
         "add": self.set_prop,
         "del": self.del_prop,
         "set": self.set_prop,
+        
+        "get": self.get_prop,
+        
         "push": self.push_prop,
         "pop": self.pop_prop,
         "_cmds": self.invoke,
-        "tick" : {
-          "invoke": "noop",  
-        },
+        "dump" : {  "invoke": "to_json"  },
+        "tick" : {  "invoke": "noop"   },
         "clear" : {
           "alias": "clear_cache",  
         },
@@ -282,6 +333,7 @@ class Cache():
       if not fx or not callable(fx):
           raise ValueError(f'Method [{fx}] not found for action [{action}].')
 
+      trace(f'attempting next task {fx} {kwargs}')
       return fx(**kwargs)
 
 
@@ -302,7 +354,9 @@ class Cache():
 
       #trace(f"Executing task {task.get('task_id')} [{cmd}] [{ssid}]")
 
-      self._execute(cmd, **kwargs)
+      ret = self._execute(cmd, **kwargs)
+      self.out(ret)
+      warn(F"return value {ret}")
 
 
   ##----------------------------------------------##
@@ -329,7 +383,7 @@ class Cache():
 
     def parse_command(self, line):
 
-      #trace(f'parse command [{line}]')
+      trace(f'parse command [{line}]')
 
       parts = line.split(maxsplit=2)  # Split only the first two spaces
 
@@ -351,8 +405,13 @@ class Cache():
             raise ValueError("Invalid JSON format in command.") 
         else:
           value = raw_value
+      elif len(parts) == 2:
+      
+        prop = parts[1]
+
       elif len(parts) == 1:
-        warn(f'task only had one part, direct call? [{line}]')
+        pass
+        #warn(f'task only had one part, direct call? [{line}]')
       else:
         pass
         #not a json thing to parse?
@@ -361,14 +420,17 @@ class Cache():
 
       if prop is not None: 
         task['prop'] = prop
+        
       if value is not None: 
         task['val'] = value
+        
       if 'ssid' not in task: 
         task['ssid'] = self.active
+        
       if 'task_id' not in task:  
         task['task_id'] = gen_id(12)
 
-      #trace(f'stack: {task}')
+      trace(f'stack: {task}')
 
       self.push_task(task)
       return task
@@ -391,7 +453,6 @@ class Cache():
 
 
     def invoke(self, **kwargs):
-
       
       #these shouldnt be passed for empty fxs
       cmd = kwargs.pop('cmd',None)
@@ -432,7 +493,25 @@ class Cache():
 
                #---> fin <---#
 
+#-----------------------------><-----------------------------#
 
+
+# class Hive(StoreProvider):
+#   def __init__(self,**opts):
+#     pass
+  
+#   def add(self,k,v):
+#     pass
+  
+#   def rm(self,k):
+#     pass
+  
+#   def get(self,k):
+#     pass
+  
+#   def up(self,**kwargs):
+#     pass
+  
 #-----------------------------><-----------------------------#
 # -> Exports: 
 
@@ -453,7 +532,18 @@ class StaticCache(Cache, metaclass=Singleton):
         super().__init__()
         
         
-static_cache = StaticCache()
+static_cache = Cache()
+
+
+#decorator
+def cache_access(fx):
+  def wrapper(self, *args, **kwargs):
+    if(not static_cache.session_stat()):
+      error('Error: session uninitated, cannot process cache')
+      return None
+    return fx(self, *args, **kwargs)
+  return wrapper
+
 
 #-----------------------------><-----------------------------#
 # -> Driver: 
@@ -477,8 +567,12 @@ def driver():
 
   cache.parse_command('push prompt {"msg":"lady had a bug in her hole"}')
   cache.parse_command('push prompt {"msg":"what shall we do oh no"}')
-
+  cache.process_tasks()
+  cache.write('tick').commit()
+  
   print(cache.get_prop("username"))  # Outputs: John
+  
+  
   print(cache.to_json())
 
 
