@@ -59,10 +59,7 @@ class SmartObject(dict):
 
 #-----------------------------><-----------------------------#
 
-def smart_merge(d1,d2):
-  this = {} | d1
-  this.update({k: v for k, v in d2.items() if v is not None})
-  return this
+
 
 #-----------------------------><-----------------------------#
 # -> Driver: 

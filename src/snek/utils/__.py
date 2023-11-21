@@ -13,3 +13,5 @@ from .data.data_builder import DataBuilder, get_nested_ref
 
 
 from .helpers import unpack_line
+
+from .shell.app_shell import AppShell
