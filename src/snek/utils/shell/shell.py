@@ -279,7 +279,7 @@ class Shell(cmd.Cmd):
     
   def submount(self, commander,  **opts):
     
-    _fwds = commander.get('forwards',None)
+    _fwds = commander.fowards if hasattr(commander, 'fowards') else None
     forwards = _fwds if _fwds else opts.get('forwards',[])
 
     subshell = commander(Shell)

@@ -1,6 +1,6 @@
 
 
-from .smart.obj import SmartObject, smart_merge
+from .smart.obj import SmartObject
 
 from .term.printkit import * #print_kit
 
@@ -12,6 +12,6 @@ from .data.cache import Cache, static_cache, cache_access, driver as cache_drive
 from .data.data_builder import DataBuilder, get_nested_ref
 
 
-from .helpers import unpack_line
+from .helpers import unpack_line, smart_merge
 
 from .shell.app_shell import AppShell
