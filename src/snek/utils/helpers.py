@@ -26,3 +26,38 @@ def unzip_pairs(pairs_list):
   ref = pairs_list.split(",")
   this = {k: v for k, v in (pair.split(":") for pair in ref)}
   return this
+
+
+def reserved(fx):
+  def wrapper(self, k, *args, **kwargs):
+      if k.startswith('_'):
+          raise ValueError("Key is reserved. Public access not allowed.")
+      return fx(self, k, *args, **kwargs)
+  return wrapper
+
+
+def unpack_line(line, num_items):
+    items = line.split()
+    padded_items = items + [None] * (num_items - len(items))
+    return padded_items[:num_items]
+
+
+def get_nested_ref(obj, path):
+  els = path.replace('[', '.[').split('.')  # Splitting on '.' after adding '.' before '['
+  for i, ref in enumerate(els):
+      if ref.startswith('['):
+          # Handle both string keys and list indices within square brackets
+          if ref.startswith("['") and ref.endswith("']"):
+              key = ref[2:-2]  # Extracting string key without brackets and quotes
+          else:
+              key = int(ref[1:-1])  # Extracting integer index without brackets
+
+          if i == len(els) - 1:
+              return obj, key
+          obj = obj[key] if isinstance(obj, list) else obj[key]
+      else:
+          if i == len(els) - 1:
+              return obj, ref
+          obj = obj[ref]
+
+  return None, None

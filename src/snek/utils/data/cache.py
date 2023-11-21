@@ -10,19 +10,20 @@
 #-----------------------------><-----------------------------#
 # -> Standrd Imports: 
 import random, json, sys
+from re import T
 from dotmap import DotMap
 #-----------------------------><-----------------------------#
 from ..term.printkit import lc, glyph, silly, trace, error, info, warn
-from ..helpers import reduce_dict
+from ..helpers import reduce_dict, reserved, get_nested_ref
 from ..base.singleton import Singleton
-from .store import StoreProvider
+from .cache_abc import CacheProvider
 
 
   
 #-----------------------------><-----------------------------#
 
   
-class Cache():
+class Cache(CacheProvider):
     def __init__(self,**opts):
       self.data = DotMap()
       self.meta = DotMap()
@@ -32,71 +33,286 @@ class Cache():
       self._last_task = None
       self._out=[]
       
-      # self._data = {
+      self._data = DotMap({
+        '_meta':{ 
+          'sessions':[], 
+          'tasks':[],
+        },
+        '_hive':{  
+          #activekey -> { key:val }
+        },
+      })
+
+      ##----------------------------------------------##
+
+    def clear(self):
+      self._data = DotMap({
+        '_meta':{ 
+          'sessions':[], 
+          'tasks':[],
+        },
+        '_hive':{  
+          #activekey -> { key:val }
+        },
+      })
+      self._active = 0
+      self._last_task = None
+      self._out=[]    
+      
         
-      #   '_meta':{ 
-      #     'sessions':[], 
-      #     'tasks':[],
-      #   },
-      #   '_hive':{    },
-      # }
+    ##----------------------------------------------##
+    ## Data Block
+    
+    @property
+    def data(self):
+        return self._data
+      
+    @data.setter
+    def data(self, val):
+        self._data = val
+
+
+    
+    ##----------------------------------------------##
+    ## Active
+    
+    @property
+    def active(self):
+      return self._active
+
+    @active.setter
+    def active(self, val):
+      self._active = val
+
+
+    # @property
+    # def active(self, val):
+    #   self._active = val
+
+    ##----------------------------------------------##
+
+    def ready(self,ssid=None):
+      active = ssid or self.active
+      if active != 0 and active in self._data._hive:
+        return True
+      return False
+    
+
+    def start(self):
+      self.active = active = gen_id(24)
+      self._data._hive[active] = { 
+        '_user' : { }, 
+        '_vars' : { }, 
+        '_out'  : [] 
+      } 
+      self._data._meta.sessions.append(active)
+      return active
+    
+    
+    def end(self,ssid):
+      active = ssid or self.active
+      if self.is_active(active):
+        del self._data._hive[active]
+        self._data._meta.sessions.remove(active)
+        return active
+      
+      
+    def switch_sss(self,ssid):
+      if ssid in self._data._hive:
+        self.active = ssid
+        return True
+      return False
+    
+
+    ##----------------------------------------------##
+    ## Hive
+    
+    @property
+    def hive(self):
+      if self.ready:
+        return self._data._hive[self.active]
+      return {}
+      
+      
+    @hive.setter
+    def hive(self, hive_dict):
+      if self.ready:
+        self._data._hive[self.active] = hive_dict
+        return True
+      return False
+      
+
+    ##----------------------------------------------##
+    ## Vars
+
+
+    def var(self,k):
+      if self.ready():
+        hive = self.hive
+        return hive['_vars'][k]
+      return False
+  
+      
+    def set_var(self,k,v):
+      if self.ready():
+        hive = self.hive
+        hive['_vars'][k] = v
+        return True
+      return False
+      
+      
+    def user(self,k):
+      if self.ready():
+        hive = self.hive
+        return hive['_user'][k]
+      return False
+
+    def set_user(self,k,v):
+      if self.ready():
+        hive = self.hive
+        hive['_user'][k] = v
+        return True
+      return False
+
+    ##----------------------------------------------##
+    ## StoreProvider interface
+    
+    @reserved
+    def add(self,k,v):
+      active = self.active
+      
+      if(active):
+        info('sessin is active')
+        hive = self.hive
+        hive.update({k:v})
+    
+    @reserved
+    def rm(self,k):
+      active = self.active
+      if(active):
+        hive = self.hive
+        hive.clear(k)
+    
+    @reserved
+    def upd(self,k,v):
+      return self.add(k,v)
+    
+    @reserved
+    def get(self,k):     
+      active = self.active
+      if(active):
+        data = self._data
+        return data.get(active,{}).get(k,None)
+
+    @reserved
+    def push(self,k,v):
+      active = self.active
+      if(active):
+        data = self._data
+        if not isinstance(data.get(active,{}).get(k,None),list):
+          data[active][k] = []
+        data[active][k].append(v)
+        
+    @reserved      
+    def pushn(self,k,*args):
+      active = self.active
+      if(active):
+        data = self._data
+        if not isinstance(data.get(active,{}).get(k,None),list):
+          data[active][k] = []
+        for v in args:
+          data[active][k].append(v)
+            
+    @reserved      
+    def pop(self,k):
+      active = self.active
+      if(active):
+        data = self._data
+        if not isinstance(data.get(active,{}).get(k,None),list):
+          data[active][k] = []
+        return data[active][k].pop()
+      
+    @reserved
+    def popi(self,k,i):
+      active = self.active
+      if(active):
+        data = self._data
+        if not isinstance(data.get(active,{}).get(k,None),list):
+          data[active][k] = []
+        return data[active][k].pop(i)
+      
+    @reserved  
+    def popn(self,k,n):
+      active = self.active
+      res=[]
+      if(active):
+        data = self._data
+        if not isinstance(data.get(active,{}).get(k,None),list):
+          data[active][k] = []
+        for i in range(n):
+          res.append(data[active][k].pop())
+      return res
+    
+    
+    ##----------------------------------------------##
+
+      
+    def _cmds(self):
+      fxs = [name for name in dir(self) if callable(getattr(self, name)) and not name.startswith("__")]
+      print("cache commands:")
+      for cmd in fxs:
+        print(f"  {cmd}")
+        
+
 
     ##----------------------------------------------##
 
 
-    # def to_json(self):
-    #   info(f'HIVE {repr(self.data)}')
-      
-    #   print(dict(self.data))
-
-    # def __str__(self):
-    #   return self.to_json()
-    
-    # def dump_json(self):
-    #   print(self.to_json())
-      
-    @property
-    def active(self):
-        return self._active
-
-    @active.setter
-    def active(self, val):
-        self._active = val
+    def new_store(self,k):
+      h = self.hive
+      if not bool(h) and not k in h:
+        h[k] = {}
+      return 0
 
 
+    def new_list(self,k):
+      h = self.hive
+      if not bool(h) and not k in h:
+        h[k] = []
+      return 0
+
+
+
+    ##----------------------------------------------##
 
     @property
     def last_task(self):
         return self._last_task
 
     @last_task.setter
-    def last_task(self, val):
-        self._last_task = val
+    def last_task(self, v):
+        self._last_task = v
 
 
 
-    def out(self,val=None):
+    def out(self,v=None):
       data = self._out
-      if not val:
+      if not v:
         if len(data) > 0:
           return data.pop()
         return []
       else:
-        data.append(val)
-      
-
-    # @out.setter
-    # def out(self, val):
-    #   #data = self._out
-    #   if len(self._out) == 0: self._out=[]
-    #   self._out.push(val)
+        data.append(v)
+        
 
 
 
 
     ##----------------------------------------------##
-
-
+    ## UTILITY
+    def noop(self):
+      pass
+    
     def raw_dump(self):
       return str(self.data)
 
@@ -104,124 +320,24 @@ class Cache():
       return json.dumps(self.data.toDict())
 
 
-    ##----------------------------------------------##
-
-    def clear_cache(self, **kwargs):
-      data = self.data
-      meta = self.meta
-      data = DotMap()
-      meta = DotMap()
-      meta.sessions = []
-      meta.tasks = []
-      self.active = 0
-
-    ##----------------------------------------------##
-
-    ##----------------------------------------------##
-    ## UTILITY
-    def noop(self):
-      pass
-    
-    def _cmds(self):
-      fxs = [name for name in dir(self) if callable(getattr(self, name)) and not name.startswith("__")]
-      print("cache commands:")
-      for cmd in fxs:
-        print(f"  {cmd}")
-
-    def _hive(self,ssid=None):
-      ssid = ssid or self.active
-      return self.data[ssid]
-        
-    def _valid_hive(self,ssid=None):
-      ssid = ssid or self.active
-      hive = self.data[ssid]
-      return not bool(hive) and ssid in self.meta.sessions
-    
-
-    def init_store(self,prop,ssid=None):
-      hive = self._hive(ssid)
-      if not bool(hive) and not prop in hive:
-        hive[prop] = {}
-      return 0
 
 
-    def init_list(self,prop,ssid=None):
-      hive = self._hive(ssid)
-      if not bool(hive) and not prop in hive:
-        hive[prop] = []
-      return 0
-
-
-    ##----------------------------------------------##
-    ## SESSION CRUD
-
-    ## HAS (requires ssid)
-    def has_session(self,ssid):
-      return ssid in self.meta.sessions
-
-    ## CREATE SSS
-    def create_session(self, init=None):
-      ssid = gen_id(24)
-      data = self.data
-      meta = self.meta
-      data[ssid] = init or DotMap()
-      meta.sessions.append(ssid)
-      self.active = ssid
-      self.write('add _user {"connected":0,"name":"","key":""}').commit()
-      return ssid
-    
-    ## DELETE SSS
-    def delete_session(self, ssid=None):
-      ssid = ssid or self.active
-      data = self.data
-      meta = self.meta
-      if ssid in meta.sessions:
-        del data[ssid]
-        meta.sessions.remove(ssid)
-        return ssid
-      return False
-
-    ## GET SSS -> hive. hive is internal 
-
-    def session_stat(self):
-      return (self.active!=0)
-
-    def session_start(self):
-      return self.create_session()
-
-    def session_end(self):
-      return self.delete_session()
 
     ##----------------------------------------------##
     ## SET %:<- prop, val
 
 
     def set_prop(self, prop, val, ssid=None, **kwargs):
+      return self.add(prop,val)
       
-      #info(f'SET PROP {prop}{val}')
-      ssid = ssid or self.active
-      hive = self._hive(ssid)
-      if self.has_session(ssid):
-        hive[prop] = val
-        #info(f'HIVE {self.data}')
-      else:
-        raise ValueError(f"No session with ID {ssid} found.")
-      
+
 
 
     ##----------------------------------------------##
     ## GET %:-> prop
 
     def get_prop(self, prop, ssid=None, **kwargs):
-      ssid = ssid or self.active
-      hive = self._hive(ssid)
-
-      if self.has_session(ssid):
-        data = hive.get(prop, None)
-        #self.out(data)
-        return data
-      #implicit else
-      raise ValueError(f"No session with ID {ssid} found.")
+      return self.get(prop)
     
 
 
@@ -232,7 +348,7 @@ class Cache():
       ssid = ssid or self.active
       hive = self._hive(ssid)
 
-      if self.has_session(ssid) and prop in hive:
+      if self.ready(ssid) and prop in hive:
         del hive[prop]
 
 
@@ -243,8 +359,8 @@ class Cache():
     def push_prop(self, prop, val, ssid=None, **kwargs):
       ssid = ssid or self.active
       hive = self._hive(ssid)
- 
-      if self.has_session(ssid):
+
+      if self.ready(ssid):
           if prop not in hive:
               hive[prop] = []
           if not isinstance(hive[prop], list):
@@ -263,7 +379,7 @@ class Cache():
       ssid = ssid or self.active
       hive = self._hive(ssid)
 
-      if self.has_session(ssid):
+      if self.ready(ssid):
           if prop not in hive:
               return None
           if not isinstance(hive[prop], list):
@@ -288,7 +404,7 @@ class Cache():
     def view_task_stack(self):
       return self.meta.tasks[:]
 
-   ##----------------------------------------------##
+    ##----------------------------------------------##
 
     def _execute(self, action, **kwargs):
       fx = None  
@@ -359,7 +475,7 @@ class Cache():
       warn(F"return value {ret}")
 
 
-  ##----------------------------------------------##
+    ##----------------------------------------------##
 
 
     def process_tasks(self):
@@ -378,8 +494,8 @@ class Cache():
       return self
 
 
-  ##----------------------------------------------##
-  #---> could use a refactor
+    ##----------------------------------------------##
+    #---> could use a refactor
 
     def parse_command(self, line):
 
@@ -436,7 +552,7 @@ class Cache():
       return task
     
 
-  ##----------------------------------------------##
+    ##----------------------------------------------##
 
     def write(self,command):
       #try:
@@ -449,7 +565,7 @@ class Cache():
       return self
 
 
-  ##----------------------------------------------##
+    ##----------------------------------------------##
 
 
     def invoke(self, **kwargs):
@@ -479,7 +595,7 @@ class Cache():
       return self.process_tasks()
 
 
-  ##----------------------------------------------##
+    ##----------------------------------------------##
 
     # Persistence
     def save_to_file(self, filename):
@@ -491,31 +607,13 @@ class Cache():
         self.data = DotMap(json.load(f))
 
 
-               #---> fin <---#
+                #---> fin <---#
 
-#-----------------------------><-----------------------------#
+    
+  #-----------------------------><-----------------------------#
+  # -> Exports: 
 
-
-# class Hive(StoreProvider):
-#   def __init__(self,**opts):
-#     pass
-  
-#   def add(self,k,v):
-#     pass
-  
-#   def rm(self,k):
-#     pass
-  
-#   def get(self,k):
-#     pass
-  
-#   def up(self,**kwargs):
-#     pass
-  
-#-----------------------------><-----------------------------#
-# -> Exports: 
-
-#-----------------------------><-----------------------------#
+  #-----------------------------><-----------------------------#
 
 
 def gen_id(size=24):
@@ -525,20 +623,28 @@ def gen_id(size=24):
 ##----------------------------------------------##
 ## Static Cache instance
 
-#static_cache = Cache()
 
-class StaticCache(Cache, metaclass=Singleton):
-    def __init__(self):
-        super().__init__()
+
+class StaticCache(Cache):
+  
+  _inst = {}
+  
+  def __init__(self):
+      super().__init__()
+  
+  def __call__(cls, *args, **kwargs):
+    if cls not in cls._inst:
+      cls._inst[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+    return cls._inst[cls]
+
         
-        
-static_cache = Cache()
+static_cache = StaticCache()
 
 
 #decorator
 def cache_access(fx):
   def wrapper(self, *args, **kwargs):
-    if(not static_cache.session_stat()):
+    if(not static_cache.ready()):
       error('Error: session uninitated, cannot process cache')
       return None
     return fx(self, *args, **kwargs)
@@ -550,30 +656,82 @@ def cache_access(fx):
 
 #-----------------------------><-----------------------------#
 
-
-
 def driver():
+  cache = Cache()
+  cache.start()
+  if cache.ready(): 
+    
+    info('cache is ready')    
+    cache.add('username','John')
+    cache.set_var('x',1)
+    cache.set_var('x',2)
+    print(cache.var('x'))
+    print(cache.raw_dump())
+    
+  else:
+    warn('cache not ready',cache.active)
+    
+    
+  complex_obj = {
+    "data" : {
+      "model": "text-davinci-003",
+      "text": "Translate the following English text to French: 'Hello, how are you today?'",
+      "max": 60,
+      "temp": 0.7,
+      "top_p": 1,
+      "freq": 0.0,
+      "pres": 0.0,
+    },
+    "likes": { "boog" : [ 1,2,3,4,5 ] },
+    "flavors": { 
+      'stawberry': [ 1,2,3], 
+      'chocolate': [5,99,100], 
+      'vanilla': [ 93,99,23 ]
+    },
+    "family" : {
+        "gonzales" : {
+            "females" : [ { "name": "lisa", "age": 33 }, { "name": "mama", "age": 99 } ],
+            "males" : [ { "name": "papa", "age": 99 }, { "name": "john", "age": 33 } ],
+            "other" : [ { "name": "sister", "age": 11 }, { "name": "brother", "age": 22 } ],
+        }
+    }
+  }
+  
+  parent, key = get_nested_ref(complex_obj, 'data.max')
+  print(parent[key])
+  
+  parent, key = get_nested_ref(complex_obj, 'flavors.vanilla[0]')
+  print(parent[key])  
+  
+  parent, key = get_nested_ref(complex_obj, 'family.gonzales.males[1].name')
+  print(parent[key])  
+  
+  
+  
+
+def driverX():
   # Usage
   cache = Cache()
   ssid = cache.create_session()
-  
-  print(ssid)
-  cache.set_prop("username", "John")
-  cache.parse_command('push users JohnX')
-  cache.parse_command('push users AppleGirl')
-  cache.parse_command('push users AppleMama')
-  cache.process_tasks()
-  cache.write('tick').commit()
 
-  cache.parse_command('push prompt {"msg":"lady had a bug in her hole"}')
-  cache.parse_command('push prompt {"msg":"what shall we do oh no"}')
-  cache.process_tasks()
-  cache.write('tick').commit()
   
-  print(cache.get_prop("username"))  # Outputs: John
+  # print(ssid)
+  # cache.set_prop("username", "John")
+  # cache.parse_command('push users JohnX')
+  # cache.parse_command('push users AppleGirl')
+  # cache.parse_command('push users AppleMama')
+  # cache.process_tasks()
+  # cache.write('tick').commit()
+
+  # cache.parse_command('push prompt {"msg":"lady had a bug in her hole"}')
+  # cache.parse_command('push prompt {"msg":"what shall we do oh no"}')
+  # cache.process_tasks()
+  # cache.write('tick').commit()
+  
+  # print(cache.get_prop("username"))  # Outputs: John
   
   
-  print(cache.to_json())
+  # print(cache.to_json())
 
 
 
