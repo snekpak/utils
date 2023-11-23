@@ -20,7 +20,7 @@ from ..term.printkit import(
   set_printer_level, get_printer_level
 )
 
-from ..__ import static_cache as cache, cache_access
+#from ..__ import static_cache as cache, cache_access
 
 set_printer_level(0)
 
@@ -106,7 +106,7 @@ class Shell(cmd.Cmd):
   def preloop(self):
  
     if Shell._ssid==-1 :
-      Shell._ssid = cache.start() 
+      Shell._ssid = 1 #cache.start() 
     else:
       info(f"session is {Shell._ssid}")
     
