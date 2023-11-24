@@ -11,7 +11,9 @@
 # -> Standrd Imports: 
 import uuid, time
 import random, json, sys
-import asyncio
+#import asyncio
+
+import atexit
 
 from urllib.parse import unquote
 
@@ -19,9 +21,15 @@ from ..base.singleton import Singleton
 from .cache_abc import CacheProvider
 from .const import STATUS as status
 
+from asyncio import CancelledError, sleep, create_task, get_event_loop, all_tasks
+
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+async def simple_async_function():
+  print("Async function started")
+  await sleep(1)
+  print("Async function completed")
 
 #-----------------------------><-----------------------------#
 
@@ -40,14 +48,43 @@ def connected(method):
 # redis.set(task_id, response.text)
 # decoded_key = unquote(key)
 
-class Cache(): #CacheProvider
+class Cache: #CacheProvider
+  
     def __init__(self,**opts):
       self._store = None
+      self._task = None
       self._status = status.UNKNOWN
       self._last = status.UNKNOWN
+      self.config(**opts)
+      #atexit.register(self._cleanup)
       #max_ping is in milliseconds
       #heartbeat is in seconds
+      
+      
+    def config(self, **opts):
+        self._host = opts.get('host', '127.0.0.1')
+        self._port = opts.get('port', 6379)
+        self._db   = opts.get('db', 0)
+        self._heartbeat = opts.get('heartbeat', 30)
+        self._timeout = opts.get('max_ping', 500)
+        
+        
+    # def _cleanup(self):
+    #   loop = get_event_loop()
+    #   if loop.is_running():
+    #     loop.run_until_complete(self.disconnect())
+    #   else:
+    #     loop.close()
+          
 
+    async def disconnect(self):
+      if self.store:
+        #await self._task.cancel()
+        await self.store.close()
+
+      
+                
+          
     ##----------------------------------------------##
     ## Status Prop
     
@@ -64,6 +101,12 @@ class Cache(): #CacheProvider
         
       self._status = val
 
+    '''only update status if the prev status is less'''
+    def next_status(self,status):
+      if status > self.status:
+        self.status = status
+        return True
+      return False
 
     @property
     def store(self):
@@ -76,7 +119,14 @@ class Cache(): #CacheProvider
         
     ##----------------------------------------------##
 
-    async def connect(self, host="127.0.0.1", port=6379, max_ping=500, heartbeat_interval=30):
+    async def connect(self, **opts):
+      
+      port = opts.get('port', self._port)
+      host = opts.get('host', self._host)
+      heartbeat = opts.get('heartbeat', self._heartbeat)
+      max_ping = opts.get('timeout', self._timeout)
+      
+      print(f'heartbeat is {heartbeat} {self._heartbeat}')
       
       if not self.store:
         self.store = Redis(host=host, port=port, decode_responses=True) #connect to instance
@@ -85,17 +135,19 @@ class Cache(): #CacheProvider
         if await self.is_live(): #set status to live
   
           if await self.max_ping(timeout=max_ping): #set status to healthy
-            asyncio.create_task(self.heartbeat(interval=heartbeat_interval,timeout=max_ping))
+            print(f'Connected to Redis at {host}:{port}')
+            
+            self._task = create_task(self.heartbeat(interval=heartbeat,timeout=max_ping))
+            
+
+            
           else:
             print(f'Unhealthy connection to Redis at {host}:{port}')
         else:
           print(f'Could not connect to Redis at {host}:{port}')
 
         
-        
-    async def disconnect(self):
-      if self.store:
-        await self.store.close()
+
         
     async def is_live(self):
         try:
@@ -113,7 +165,8 @@ class Cache(): #CacheProvider
       if self.store:
         start_time = time.perf_counter()
         await self.store.ping()    
-        if self.status < status.PINGABLE: self.status = status.PINGABLE
+        #if self.status < status.PINGABLE: self.status = status.PINGABLE
+        self.next_status(status.PINGABLE)
         duration = time.perf_counter() - start_time
         dur_ms = int(duration * 1000)        
         return dur_ms
@@ -124,35 +177,44 @@ class Cache(): #CacheProvider
       if this_ping < timeout:
         self.status = status.HEALTHY
         return True
-      self.status = status.PINGABLE
+      self.next_status(status.PINGABLE)
       return False
         
         
 
     async def heartbeat(self, interval=30, timeout=500):
+        print(f"Starting heartbeat with interval {interval} and timeout {timeout}") 
+        
         was_healthy = True
         while True:
           
-          is_healthy = await self.max_ping(timeout)
+          print("Running heartbeat...")
           
+          is_healthy = await self.max_ping(timeout)
           if not is_healthy and was_healthy:
               print("Redis became unhealthy!")
-              # Trigger actions for when Redis goes offline
-              # e.g., retry connection, send notification, etc.
+
           elif is_healthy and not was_healthy:
               print("Redis connection is healthy again.")
-              # Actions for when Redis comes back online
+
           elif is_healthy and was_healthy:
-            print("Redis connection is still healthy.")
-            if(self.status < status.READY):
-              self.status = status.READY
+            self.next_status(status.READY)
+            
+            print(f"Redis connection is still healthy. {self.status}")
           else:
-            print("Redis connection is still unhealthy.")              
+            print("Redis connection is still unhealthy.")     
+                     
           was_healthy = is_healthy
 
-          await asyncio.sleep(interval)
-
+          await sleep(interval)
           
+    @connected
+    async def flush(self):
+      await self._store.flushdb()
+    
+    @connected
+    async def size(self):
+        return await self.store.dbsize()
         
     @connected
     async def set(self, key, value):
@@ -201,11 +263,11 @@ class Cache(): #CacheProvider
         
       
     @connected
-    async def find(self, key, **opts):
-      pass
+    async def keys(self, **opts):
+      return await self.find()
 
     @connected
-    async def keys(self, **opts):
+    async def find(self, pattern='*'):
       async with self.store.client() as conn:
         cursor = b"0"  # start at cursor 0
         keys = []
@@ -238,8 +300,5 @@ class StaticCache(Cache):
 #-----------------------------><-----------------------------#
 
 
-async def driver():
-  cache = Cache()
-  await cache.connect()
-  
+def driver():
   pass
