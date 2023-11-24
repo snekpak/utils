@@ -104,6 +104,7 @@ class Cache: #CacheProvider
     '''only update status if the prev status is less'''
     def next_status(self,status):
       if status > self.status:
+        print(f'Cache status changed from {self.status} to {status}')
         self.status = status
         return True
       return False
@@ -137,7 +138,7 @@ class Cache: #CacheProvider
           if await self.max_ping(timeout=max_ping): #set status to healthy
             print(f'Connected to Redis at {host}:{port}')
             
-            self._task = create_task(self.heartbeat(interval=heartbeat,timeout=max_ping))
+            #self._task = create_task(self.heartbeat(interval=heartbeat,timeout=max_ping))
             
 
             

@@ -46,9 +46,9 @@ class Shell(cmd.Cmd):
 
     self.color = 32
 
-    self.contexts = {}
-    self.aliases = {}
-    self.forwards = { }
+    self._contexts = {}
+    self._aliases= {}
+    self._forwards = {}
     
     self.sss = 0
     self._id = 'top'
@@ -61,13 +61,13 @@ class Shell(cmd.Cmd):
 
 ##----------------------------------------------##
 
-  @property
-  def id(self):
-      return self._id
+  # @property
+  # def id(self):
+  #     return self._id
 
-  @property
-  def ssid(self):
-      return Shell._ssid
+  # @property
+  # def ssid(self):
+  #     return Shell._ssid
 
   #listen for subshell responses
   @property
@@ -80,12 +80,23 @@ class Shell(cmd.Cmd):
 
 ##----------------------------------------------##
 
-  def mem(self,key):
-    return Shell._mem[key]
+  @property 
+  def id(self):
+    return self._id
+  
+  @id.setter
+  def id(self, val):
+    self._n_idame = val
+  
+  
+  @property
+  def forwards(self):
+    return self._forwards
 
-  def mem_set(self, key, val):
-    Shell._mem[key] = val
-    
+  @forwards.setter
+  def forwards(self, val):
+    self._forwards = val
+
 ##----------------------------------------------##
 
   def refresh(self):
@@ -182,7 +193,7 @@ class Shell(cmd.Cmd):
 
   def do_cmds(self,__):
     cmds = self.__cmd_list()
-    als = self.aliases
+    als = self._aliases
     a_list = [f"{value['ns']}" for value in als.values()]
 
     all = cmds + a_list
@@ -191,7 +202,7 @@ class Shell(cmd.Cmd):
 ##----------------------------------------------##
 
   def do_alias(self, line):
-    aliases = self.aliases
+    aliases = self._aliases
     warn("try aliases!")
     for alias, details in aliases.items():
       info(f'{alias} -> {details}')
@@ -233,16 +244,16 @@ class Shell(cmd.Cmd):
     return cmds
 
   def __load_cli(self,key,loop=False):
-    if key in self.contexts:
-      ref = self.contexts[key]
+    if key in self._contexts:
+      ref = self._contexts[key]
       if bool(ref):
         cli = ref.get('cli')
         return cli
 
 
   def __load_alias(self,key):
-    if key in self.aliases:
-      detail = self.aliases[key]
+    if key in self._aliases:
+      detail = self._aliases[key]
       return detail
 
 
@@ -279,17 +290,23 @@ class Shell(cmd.Cmd):
     
   def submount(self, commander,  **opts):
     
-    _fwds = commander.fowards if hasattr(commander, 'fowards') else None
-    forwards = _fwds if _fwds else opts.get('forwards',[])
+
+    
 
     subshell = commander(Shell)
     ctx = subshell.id;
+    
+
+    forwards = subshell.forwards if hasattr(subshell, 'forwards') else {}
+    
+    
+    print('fwd', forwards)
 
 #   ---> namespace 
-    if ctx in self.contexts or ctx in self.aliases:
+    if ctx in self._contexts or ctx in self._aliases:
       raise NameError(f'Namspace {ctx} is already defined. Cannot mount!')
 
-    self.contexts[ctx] = { 'cli': subshell }
+    self._contexts[ctx] = { 'cli': subshell }
 
 
     # # Example of how you might use the aliases
@@ -303,7 +320,7 @@ class Shell(cmd.Cmd):
     if len(forwards) > 0:
 
       mtd_cmds = self.__cmd_list()
-      mtd_als=list(self.aliases.keys())
+      mtd_als=list(self._aliases.keys())
       
       for fwd, details in forwards.items():
         this_cmd = details['cmd'][3:] #trim do_
@@ -316,7 +333,7 @@ class Shell(cmd.Cmd):
         if not ctx in details:
           details['context'] = ctx
         trace(f'new alias added to shell [{fwd}->{ctx}]')
-        self.aliases[fwd] = details
+        self._aliases[fwd] = details
 
 
 #-----------------------------><-----------------------------#
