@@ -124,23 +124,18 @@ class Cache: #CacheProvider
       
       port = opts.get('port', self._port)
       host = opts.get('host', self._host)
-      heartbeat = opts.get('heartbeat', self._heartbeat)
+      #heartbeat = opts.get('heartbeat', self._heartbeat)
       max_ping = opts.get('timeout', self._timeout)
       
-      info(f'heartbeat is {heartbeat} {self._heartbeat}')
+      #info(f'heartbeat is {heartbeat} {self._heartbeat}')
       
       if not self.store:
         self.store = Redis(host=host, port=port, decode_responses=True) #connect to instance
         self.status = status.CONNECTED
-
         if self.is_live(): #set status to live
-  
           if self.max_ping(timeout=max_ping): #set status to healthy
             info(f'Connected to Redis at {host}:{port}')
-            
             #self._task = create_task(self.heartbeat(interval=heartbeat,timeout=max_ping))
-            
-            
           else:
             warn(f'Unhealthy connection to Redis at {host}:{port}')
         else:
@@ -184,33 +179,33 @@ class Cache: #CacheProvider
       return False
         
         
-
+    # not using async 
     def heartbeat(self, interval=30, timeout=500):
-        print(f"Starting heartbeat with interval {interval} and timeout {timeout}") 
+      print(f"Starting heartbeat with interval {interval} and timeout {timeout}") 
+      
+      was_healthy = True
+      while True:
         
-        was_healthy = True
-        while True:
-          
-          print("Running heartbeat...")
-          
-          is_healthy = self.max_ping(timeout)
-          if not is_healthy and was_healthy:
-              print("Redis became unhealthy!")
+        print("Running heartbeat...")
+        
+        is_healthy = self.max_ping(timeout)
+        if not is_healthy and was_healthy:
+            print("Redis became unhealthy!")
 
-          elif is_healthy and not was_healthy:
-              print("Redis connection is healthy again.")
+        elif is_healthy and not was_healthy:
+            print("Redis connection is healthy again.")
 
-          elif is_healthy and was_healthy:
-            self.next_status(status.READY)
-            
-            print(f"Redis connection is still healthy. {self.status}")
-          else:
-            print("Redis connection is still unhealthy.")     
-                     
-          was_healthy = is_healthy
-
-          #sleep(interval)
+        elif is_healthy and was_healthy:
+          self.next_status(status.READY)
           
+          print(f"Redis connection is still healthy. {self.status}")
+        else:
+          print("Redis connection is still unhealthy.")     
+                    
+        was_healthy = is_healthy
+
+        #sleep(interval)
+        
     @connected
     def flush(self):
       self._store.flushdb()
@@ -251,18 +246,32 @@ class Cache: #CacheProvider
     @connected
     def pop(self, key, left=True):
         if left:
-            return self.store.lpop(key)
+          return self.store.lpop(key)
         else:
-            return self.store.rpop(key)  
+          return self.store.rpop(key)  
           
           
     @connected
-    def set_hash(self, key, subkey, value):
-        return self.store.hset(key, subkey, value)
-
+    def set_hash(self, key, hash_value):
+      return self.store.hset(key, mapping=hash_value)
+        
     @connected
-    def get_hash(self, key, subkey):
-        return self.store.hget(key, subkey)
+    def get_hash(self, key):
+      hash_data = self.store.hgetall(key)
+      if hash_data:
+         hash_data = {key.decode(): value.decode() for key, value in hash_data.items()}
+      return hash_data     
+    
+      
+      
+        
+    @connected
+    def set_mhash(self, key, **kwargs):
+        return self.store.hmset(key, **kwargs)
+        
+    @connected
+    def get_mhash(self, key, *args):
+        return self.store.hmget(key, *args)
         
       
     @connected
@@ -348,7 +357,7 @@ class Cache: #CacheProvider
       elif cmd in ['pop','<']:
         ret = self.pop(key)
         print(ret)
-        return ret
+
       
       elif cmd in ['call']:
         warn(f'attempting to call {key}')
@@ -356,15 +365,24 @@ class Cache: #CacheProvider
         fx = getattr(self, key)
         ret = fx(*args)
         print(ret)
-        return ret
-      # set_hash k sk v
-      # get_hash k sk
 
+      
+      # set_hash k sk v
+      elif cmd == 'hset':
+        print(self.set_hash(key,p1))
+      # get_hash k sk
+      elif cmd == 'hget':
+        ret = self.get_hash(key)
+
+        
       # find 
       elif cmd == 'find':
         print(self.find(key))
       
       
+      if ret is not None:
+        ret = ret.decode()
+        return ret
 
 #-----------------------------><-----------------------------#
 # -> Exports: 
