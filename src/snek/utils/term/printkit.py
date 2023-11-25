@@ -21,7 +21,7 @@ from ..smart.fbook import FunctionBook
 #-----------------------------><-----------------------------#
 
 silly   = Printer.factory('silly', level.SILLY, fg=lc.SILLY,bg=0, prefix=glyph.HASH )
-trace   = Printer.factory('error', level.ERROR, fg=lc.TRACE, si=True, prefix=glyph.DOTS, static=True)
+trace   = Printer.factory('trace', level.TRACE, fg=lc.TRACE, si=True, prefix=glyph.DOTS, static=True)
 info    = Printer.factory('info',  level.INFO,  fg=lc.INFO, bg=0,prefix=glyph.BOOP, static=True)
 success = Printer.factory('success',  level.SUCCESS,  fg=lc.SUCCESS, bg=0,prefix=glyph.PLUS, static=True)
 warn    = Printer.factory('warn',  level.WARNING, fg=lc.WARNING, prefix=glyph.FLAG, static=True)

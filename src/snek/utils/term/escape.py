@@ -26,7 +26,8 @@ from ..smart.obj import SmartObject
 
 #------------------------------  
 # legacy lightweight convenience methods
-  
+#TODO: refactor these cuz theyre super fragile
+
 def escape(fg=99,bg=0,inv=False,code=''):
   if fg:
     code += f"\033[38;5;{fg}m"

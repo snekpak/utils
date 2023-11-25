@@ -53,7 +53,11 @@ def unpack_line(line, num_items):
     padded_items = items + [None] * (num_items - len(items))
     return padded_items[:num_items]
 
-
+def find_kbv(ref, term):
+    for key, values in ref.items():
+      if term in values:
+        return key
+    return None 
 
 def get_nested_ref(obj, path):
   els = path.replace('[', '.[').split('.')  # Splitting on '.' after adding '.' before '['

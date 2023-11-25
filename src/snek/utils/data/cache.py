@@ -11,9 +11,6 @@
 # -> Standrd Imports: 
 import uuid, time
 import random, json, sys
-#import asyncio
-
-import atexit
 
 from urllib.parse import unquote
 
@@ -21,24 +18,29 @@ from ..base.singleton import Singleton
 from .cache_abc import CacheProvider
 from .const import STATUS as status
 
-from asyncio import CancelledError, sleep, create_task, get_event_loop, all_tasks
+from ..helpers import unpack_line
 
-from redis.asyncio import Redis
+#from asyncio import CancelledError, sleep, create_task, get_event_loop, all_tasks
+
+from redis import Redis
 from redis.exceptions import RedisError
 
-async def simple_async_function():
-  print("Async function started")
-  await sleep(1)
-  print("Async function completed")
+from ..term.printkit import(
+  trace, error, info, success, warn 
+)
+
 
 #-----------------------------><-----------------------------#
 
 def connected(method):
     """Decorator to ensure Redis connection is available before method call."""
-    async def wrapper(self, *args, **kwargs):
+    def wrapper(self, *args, **kwargs):
         if not self.store:
-          raise Exception("Datastore is not ready")
-        return await method(self, *args, **kwargs)
+          warn("Please wait while we connect to the datastore...")
+          st = self.connect()
+          if st < status.HEALTHY:
+            raise Exception("Datastore is not ready")
+        return method(self, *args, **kwargs)
     return wrapper
 
 #-----------------------------><-----------------------------#
@@ -55,13 +57,13 @@ class Cache: #CacheProvider
       self._task = None
       self._status = status.UNKNOWN
       self._last = status.UNKNOWN
-      self.config(**opts)
+      self._config(**opts)
       #atexit.register(self._cleanup)
       #max_ping is in milliseconds
       #heartbeat is in seconds
       
       
-    def config(self, **opts):
+    def _config(self, **opts):
         self._host = opts.get('host', '127.0.0.1')
         self._port = opts.get('port', 6379)
         self._db   = opts.get('db', 0)
@@ -77,10 +79,10 @@ class Cache: #CacheProvider
     #     loop.close()
           
 
-    async def disconnect(self):
+    def disconnect(self):
       if self.store:
-        #await self._task.cancel()
-        await self.store.close()
+        #self._task.cancel()
+        self.store.close()
 
       
                 
@@ -94,17 +96,15 @@ class Cache: #CacheProvider
       
     @status.setter
     def status(self, val):
-      
       if(self._status != val):
         self._last = self._status
-        print(f'Cache status changed from {self._last} to {val}')
-        
+        trace(f'Cache status changed from {self._last} to {val}')
       self._status = val
 
     '''only update status if the prev status is less'''
     def next_status(self,status):
       if status > self.status:
-        print(f'Cache status changed from {self.status} to {status}')
+        trace(f'Cache status changed from {self.status} to {status}')
         self.status = status
         return True
       return False
@@ -120,39 +120,40 @@ class Cache: #CacheProvider
         
     ##----------------------------------------------##
 
-    async def connect(self, **opts):
+    def connect(self, **opts):
       
       port = opts.get('port', self._port)
       host = opts.get('host', self._host)
       heartbeat = opts.get('heartbeat', self._heartbeat)
       max_ping = opts.get('timeout', self._timeout)
       
-      print(f'heartbeat is {heartbeat} {self._heartbeat}')
+      info(f'heartbeat is {heartbeat} {self._heartbeat}')
       
       if not self.store:
         self.store = Redis(host=host, port=port, decode_responses=True) #connect to instance
         self.status = status.CONNECTED
 
-        if await self.is_live(): #set status to live
+        if self.is_live(): #set status to live
   
-          if await self.max_ping(timeout=max_ping): #set status to healthy
-            print(f'Connected to Redis at {host}:{port}')
+          if self.max_ping(timeout=max_ping): #set status to healthy
+            info(f'Connected to Redis at {host}:{port}')
             
             #self._task = create_task(self.heartbeat(interval=heartbeat,timeout=max_ping))
             
-
             
           else:
-            print(f'Unhealthy connection to Redis at {host}:{port}')
+            warn(f'Unhealthy connection to Redis at {host}:{port}')
         else:
-          print(f'Could not connect to Redis at {host}:{port}')
+          warn(f'Could not connect to Redis at {host}:{port}')
+          
+      return self.status
 
         
 
         
-    async def is_live(self):
+    def is_live(self):
         try:
-          ret= await self.store.ping()
+          ret= self.store.ping()
           if ret:
             if self.status < status.LIVE: self.status = status.LIVE
             return True
@@ -162,19 +163,20 @@ class Cache: #CacheProvider
         
         
     @connected          
-    async def ping(self):
+    def ping(self):
       if self.store:
         start_time = time.perf_counter()
-        await self.store.ping()    
+        self.store.ping()    
         #if self.status < status.PINGABLE: self.status = status.PINGABLE
         self.next_status(status.PINGABLE)
         duration = time.perf_counter() - start_time
-        dur_ms = int(duration * 1000)        
+        dur_ms = int(duration * 1000)      
+        info(f'ping {dur_ms}ms')  
         return dur_ms
         
         
-    async def max_ping(self, timeout=500):  
-      this_ping = await self.ping() #set status to pingable
+    def max_ping(self, timeout=500):  
+      this_ping = self.ping() #set status to pingable
       if this_ping < timeout:
         self.status = status.HEALTHY
         return True
@@ -183,7 +185,7 @@ class Cache: #CacheProvider
         
         
 
-    async def heartbeat(self, interval=30, timeout=500):
+    def heartbeat(self, interval=30, timeout=500):
         print(f"Starting heartbeat with interval {interval} and timeout {timeout}") 
         
         was_healthy = True
@@ -191,7 +193,7 @@ class Cache: #CacheProvider
           
           print("Running heartbeat...")
           
-          is_healthy = await self.max_ping(timeout)
+          is_healthy = self.max_ping(timeout)
           if not is_healthy and was_healthy:
               print("Redis became unhealthy!")
 
@@ -207,75 +209,161 @@ class Cache: #CacheProvider
                      
           was_healthy = is_healthy
 
-          await sleep(interval)
+          #sleep(interval)
           
     @connected
-    async def flush(self):
-      await self._store.flushdb()
+    def flush(self):
+      self._store.flushdb()
     
     @connected
-    async def size(self):
-        return await self.store.dbsize()
+    def size(self):
+        return self.store.dbsize()
         
     @connected
-    async def set(self, key, value):
-        await self.store.set(key, value)
+    def set(self, key, value):
+        self.store.set(key, value)
 
     @connected
-    async def get(self, key):
-        return await self.store.get(key)
+    def get(self, key):
+        return self.store.get(key)
 
     @connected
-    async def delete(self, key):
-        return await self.store.delete(key)
+    def rm(self, key):
+        return self.store.delete(key)
 
     @connected
-    async def update(self, key, value,**opts):
-      exists = await self.store.exists(key)
+    def upd(self, key, value):
+      exists = self.store.exists(key)
       if exists:
-        await self.store.set(key, value)
+        self.store.set(key, value)
         return True
       return False
     
     
 
     @connected
-    async def push(self, key, value, left=True):
+    def push(self, key, value, left=True):
       if left:
-        return await self.store.lpush(key, value)
+        return self.store.lpush(key, value)
       else:
-        return await self.store.rpush(key, value)
+        return self.store.rpush(key, value)
     
     @connected
-    async def pop(self, key, left=True):
+    def pop(self, key, left=True):
         if left:
-            return await self.store.lpop(key)
+            return self.store.lpop(key)
         else:
-            return await self.store.rpop(key)  
+            return self.store.rpop(key)  
           
           
     @connected
-    async def set_hash(self, key, subkey, value):
-        return await self.store.hset(key, subkey, value)
+    def set_hash(self, key, subkey, value):
+        return self.store.hset(key, subkey, value)
 
     @connected
-    async def get_hash(self, key, subkey):
-        return await self.store.hget(key, subkey)
+    def get_hash(self, key, subkey):
+        return self.store.hget(key, subkey)
         
       
     @connected
-    async def keys(self, **opts):
-      return await self.find()
+    def keys(self):
+      return self.find()
 
     @connected
-    async def find(self, pattern='*'):
-      async with self.store.client() as conn:
+    def find(self, pattern='*'):
+      with self.store.client() as conn:
         cursor = b"0"  # start at cursor 0
         keys = []
         while cursor:
-          cursor, new_keys = await conn.scan(cursor, match=pattern)
+          cursor, new_keys = conn.scan(cursor, match=pattern)
           keys.extend(new_keys)
         return keys
+      
+    
+    @connected
+    def dump(self):
+      data={}
+      for key in self.store.scan_iter():
+        data[key] = self.store.get(key)
+      return data
+      
+        
+    ##----------------------------------------------##
+
+      
+    def _cmds(self,to_str=False):
+      fxs = [name for name in dir(self) if callable(getattr(self, name)) and not name.startswith("__")]
+      
+      fxs.sort()
+      if not to_str:
+        print("cache commands:")
+        for cmd in fxs:
+          print(f"{cmd}")
+      else:
+        return fxs
+
+    ##----------------------------------------------##
+    #---> could use a refactor
+
+    def parse(self, line):
+
+      #trace(f'parse command [{line}]')
+      ret=None
+      line = line.strip()
+      cmd,key,p1,p2,p3,p4 = unpack_line(line,6)
+      
+
+        
+      args = [arg for arg in [p1, p2, p3, p4] if arg is not None]
+      trace(f' [{cmd}] [{key}] [{args}]')
+  
+      # if cmd and cmd.startswith('$'):
+      #   args.insert(0,key)
+      #   key = cmd[1:]
+      
+      # size
+      if cmd == 'size':
+        print(self.size())
+      # ping
+      elif cmd == 'ping':
+        print(self.ping())      
+      # keys
+      elif cmd == 'keys':
+        print(self.keys())
+      # set k v
+      elif cmd in ['set','add','+']:
+        ret = self.set(key,p1)
+      # get k 
+      elif cmd in ['get','read','@']:
+        ret = self.get(key)
+        print(ret)
+        return ret
+      # rm k
+      elif cmd in ['del','rm','-']:
+        ret = self.set(key,p1)
+      # push k v l
+      elif cmd in ['push','>']:
+        ret = self.push(key,p1)
+      # pop k l
+      elif cmd in ['pop','<']:
+        ret = self.pop(key)
+        print(ret)
+        return ret
+      
+      elif cmd in ['call']:
+        warn(f'attempting to call {key}')
+                
+        fx = getattr(self, key)
+        ret = fx(*args)
+        print(ret)
+        return ret
+      # set_hash k sk v
+      # get_hash k sk
+
+      # find 
+      elif cmd == 'find':
+        print(self.find(key))
+      
       
 
 #-----------------------------><-----------------------------#
@@ -293,7 +381,7 @@ class StaticCache(Cache):
       cls._inst[cls] = super(Singleton, cls).__call__(*args, **kwargs)
     return cls._inst[cls]
 
-
+static_cache = StaticCache()
 
 #-----------------------------><-----------------------------#
 # -> Driver: 

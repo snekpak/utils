@@ -29,7 +29,7 @@ class LC(SmartEnum):
   SUCCESS = 34 #from 2 so lum will work
   INFO = 39
   DEBUG = 231
-  TRACE = 244
+  TRACE = 238
   SILLY = 213
   NOTSET= 6
   DISABLED =15
@@ -63,6 +63,8 @@ class GLYPH(SmartEnum):
   MORE='&'
   SQUID='〰️'
   SCRIPT='§'
+  UP='↑'
+  DOWN='↓'
   
   LINE="-----------------------------"
 
